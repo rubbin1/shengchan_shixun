@@ -263,7 +263,7 @@ if __name__ == "__main__":
 
     # 显示当前保存路径
     label_save_path = tk.Label(window, text='保存路径：' + save_folder, anchor='w', width=60)
-    label_save_path.place(x=20, y=340)
+    label_save_path.place(x=20, y=330)
 
     # 选择文件夹按钮
     btn_select_folder = tk.Button(window, text='选择保存文件夹', width=15, height=1, command=select_folder)
