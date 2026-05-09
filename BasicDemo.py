@@ -251,4 +251,3 @@ if __name__ == "__main__":
     btn_set_parameter = tk.Button(window, text='设置参数', width=15, height=1, command = set_parameter)
     btn_set_parameter.place(x=160, y=500)
     window.mainloop()
-
