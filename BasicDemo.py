@@ -4,6 +4,7 @@ from tkinter import *
 import _tkinter
 import tkinter.messagebox
 import tkinter as tk
+from tkinter import filedialog
 import sys, os
 from tkinter import ttk
 sys.path.append("./MvImport")
@@ -47,6 +48,9 @@ if __name__ == "__main__":
     obj_cam_operation = 0
     global b_is_run
     b_is_run = False
+
+    global save_folder
+    save_folder = os.getcwd()
 
     #界面设计代码
     window = tk.Tk()
@@ -119,20 +123,18 @@ if __name__ == "__main__":
     
         #ch:打开相机 | en:open device
     def open_device():
-        global deviceList
-        global nSelCamIndex
-        global obj_cam_operation
-        global b_is_run
-        if True == b_is_run:
-            tkinter.messagebox.showinfo('show info','Camera is Running!')
+        global deviceList, nSelCamIndex, obj_cam_operation, b_is_run, save_folder
+        if b_is_run:
+            tkinter.messagebox.showinfo('show info', 'Camera is Running!')
             return
-        obj_cam_operation = CameraOperation(cam,deviceList,nSelCamIndex)
+        obj_cam_operation = CameraOperation(cam, deviceList, nSelCamIndex)
         ret = obj_cam_operation.Open_device()
-        if  0!= ret:
+        if 0 != ret:
             b_is_run = False
         else:
             model_val.set('continuous')
             b_is_run = True
+            obj_cam_operation.save_path = save_folder  # *** 新增：同步保存路径 ***
 
     # ch:开始取流 | en:Start grab image
     def start_grabbing():
@@ -173,10 +175,23 @@ if __name__ == "__main__":
         global obj_cam_operation
         obj_cam_operation.b_save_bmp = True
 
+    #选择保存图片的文件夹
+    def select_folder():
+        global save_folder
+        global obj_cam_operation
+        path = tk.filedialog.askdirectory(title='选择图片保存文件夹')
+        if path:  # 用户没有取消
+            save_folder = path
+            label_save_path.config(text='保存路径：' + save_folder)
+            # 如果相机已打开，立即更新对象属性
+            if obj_cam_operation != 0:
+                obj_cam_operation.save_path = save_folder
+
     #ch:保存jpg图片 | en:save jpg image
     def jpg_save():
         global obj_cam_operation
         obj_cam_operation.b_save_jpg = True
+
 
     def get_parameter():
         global obj_cam_operation
@@ -204,19 +219,19 @@ if __name__ == "__main__":
     device_list.bind("<<ComboboxSelected>>", xFunc)
 
     label_exposure_time = tk.Label(window, text='曝光时间',width=15, height=1)
-    label_exposure_time.place(x=20, y=350)
+    label_exposure_time.place(x=20, y=400)
     text_exposure_time = tk.Text(window,width=15, height=1)
-    text_exposure_time.place(x=160, y=350)
+    text_exposure_time.place(x=160, y=400)
 
     label_gain = tk.Label(window, text='增益', width=15, height=1)
-    label_gain.place(x=20, y=400)
+    label_gain.place(x=20, y=450)
     text_gain = tk.Text(window,width=15, height=1)
-    text_gain.place(x=160, y=400)
+    text_gain.place(x=160, y=450)
 
     label_frame_rate = tk.Label(window, text='帧率', width=15, height=1)
-    label_frame_rate.place(x=20, y=450)
+    label_frame_rate.place(x=20, y=500)
     text_frame_rate  = tk.Text(window,width=15, height=1)
-    text_frame_rate.place(x=160, y=450)
+    text_frame_rate.place(x=160, y=500)
 
     btn_enum_devices = tk.Button(window, text='枚举设备', width=35, height=1, command = enum_devices )
     btn_enum_devices.place(x=20, y=50)
@@ -246,8 +261,16 @@ if __name__ == "__main__":
     btn_save_jpg = tk.Button(window, text='保存JPG', width=15, height=1, command = jpg_save)
     btn_save_jpg.place(x=160, y=300)
 
+    # 显示当前保存路径
+    label_save_path = tk.Label(window, text='保存路径：' + save_folder, anchor='w', width=60)
+    label_save_path.place(x=20, y=340)
+
+    # 选择文件夹按钮
+    btn_select_folder = tk.Button(window, text='选择保存文件夹', width=15, height=1, command=select_folder)
+    btn_select_folder.place(x=20, y=360)
+
     btn_get_parameter = tk.Button(window, text='获取参数', width=15, height=1, command = get_parameter)
-    btn_get_parameter.place(x=20, y=500)
+    btn_get_parameter.place(x=20, y=550)
     btn_set_parameter = tk.Button(window, text='设置参数', width=15, height=1, command = set_parameter)
-    btn_set_parameter.place(x=160, y=500)
+    btn_set_parameter.place(x=160, y=550)
     window.mainloop()

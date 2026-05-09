@@ -41,7 +41,7 @@ class CameraOperation():
 
     def __init__(self,obj_cam,st_device_list,n_connect_num=0,b_open_device=False,b_start_grabbing = False,h_thread_handle=None,\
                 b_thread_closed=False,st_frame_info=None,b_exit=False,b_save_bmp=False,b_save_jpg=False,buf_save_image=None,\
-                n_save_image_size=0,n_win_gui_id=0,frame_rate=0,exposure_time=0,gain=0):
+                n_save_image_size=0,n_win_gui_id=0,frame_rate=0,exposure_time=0,gain=0,save_path=None):
 
         self.obj_cam = obj_cam
         self.st_device_list = st_device_list
@@ -61,6 +61,11 @@ class CameraOperation():
         self.frame_rate = frame_rate
         self.exposure_time = exposure_time
         self.gain = gain
+
+        if save_path is None:
+            self.save_path = os.getcwd()
+        else:
+            self.save_path = save_path
 
     def To_hex_str(self,num):
         chaDic = {10: 'a', 11: 'b', 12: 'c', 13: 'd', 14: 'e', 15: 'f'}
@@ -302,12 +307,14 @@ class CameraOperation():
                     del buf_cache
                 break
 
-    def Save_jpg(self,buf_cache):
-        if(None == buf_cache):
+    def Save_jpg(self, buf_cache):
+        if (None == buf_cache):
             return
         self.buf_save_image = None
-        #file_path = str(self.st_frame_info.nFrameNum) + ".jpg"
-        file_path = os.path.join("pictures/spare parts", str(self.st_frame_info.nFrameNum) + ".jpg")
+        # 确保保存目录存在
+        if not os.path.exists(self.save_path):
+            os.makedirs(self.save_path, exist_ok=True)
+        file_path = os.path.join(self.save_path, str(self.st_frame_info.nFrameNum) + ".jpg")
         self.n_save_image_size = self.st_frame_info.nWidth * self.st_frame_info.nHeight * 3 + 2048
         if self.buf_save_image is None:
             self.buf_save_image = (c_ubyte * self.n_save_image_size)()
@@ -343,11 +350,14 @@ class CameraOperation():
         if None != self.buf_save_image:
             del self.buf_save_image
 
-    def Save_Bmp(self,buf_cache):
-        if(0 == buf_cache):
+    def Save_Bmp(self, buf_cache):
+        if (0 == buf_cache):
             return
         self.buf_save_image = None
-        file_path = str(self.st_frame_info.nFrameNum) + ".bmp"    
+        # 确保保存目录存在
+        if not os.path.exists(self.save_path):
+            os.makedirs(self.save_path, exist_ok=True)
+        file_path = os.path.join(self.save_path, str(self.st_frame_info.nFrameNum) + ".bmp")
         self.n_save_image_size = self.st_frame_info.nWidth * self.st_frame_info.nHeight * 3 + 2048
         if self.buf_save_image is None:
             self.buf_save_image = (c_ubyte * self.n_save_image_size)()
