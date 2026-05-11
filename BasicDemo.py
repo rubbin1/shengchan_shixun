@@ -63,8 +63,7 @@ if __name__ == "__main__":
     page.pack(expand=True, fill=BOTH)
     panel = Label(page)
     panel.place(x=190, y=10,height=600,width=1000)
-
-    #绑定下拉列表至设备信息索引
+        #绑定下拉列表至设备信息索引
     def xFunc(event):
         global nSelCamIndex
         nSelCamIndex = TxtWrapBy("[","]",device_list.get())
