@@ -8,7 +8,7 @@ from tkinter import *
 from tkinter.messagebox import *
 import tkinter as tk
 import numpy as np
-import cv2
+import cv2 as cv
 import time
 import sys, os
 import datetime
@@ -22,6 +22,8 @@ from PIL import Image
 
 sys.path.append("./MvImport")
 from MvCameraControl_class import *
+
+from part_detector import PartDetector
 
 def Async_raise(tid, exctype):
     tid = ctypes.c_long(tid)
@@ -61,6 +63,7 @@ class CameraOperation():
         self.frame_rate = frame_rate
         self.exposure_time = exposure_time
         self.gain = gain
+        self.detector = PartDetector(min_area_ratio=0.0005, debug=False)
 
         if save_path is None:
             self.save_path = os.getcwd()
@@ -232,75 +235,99 @@ class CameraOperation():
 
             tkinter.messagebox.showinfo('show info','set parameter success!')
 
-    def Work_thread(self,root,panel):
-        stOutFrame = MV_FRAME_OUT()  
+    def Work_thread(self, root, panel):
+        stOutFrame = MV_FRAME_OUT()
         img_buff = None
         buf_cache = None
         numArray = None
+
+        # 显示与检测尺寸（将大图缩放到此尺寸进行处理和显示）
+        DISPLAY_W, DISPLAY_H = 800, 600
+
+        # 跳帧相关变量
+        self.frame_count = 0
+        self.last_detected = None      # 缓存上次检测结果（BGR 小图）
+
         while True:
             ret = self.obj_cam.MV_CC_GetImageBuffer(stOutFrame, 1000)
             if 0 == ret:
                 if None == buf_cache:
                     buf_cache = (c_ubyte * stOutFrame.stFrameInfo.nFrameLen)()
-                #获取到图像的时间开始节点获取到图像的时间开始节点
                 self.st_frame_info = stOutFrame.stFrameInfo
                 cdll.msvcrt.memcpy(byref(buf_cache), stOutFrame.pBufAddr, self.st_frame_info.nFrameLen)
-                print ("get one frame: Width[%d], Height[%d], nFrameNum[%d]"  % (self.st_frame_info.nWidth, self.st_frame_info.nHeight, self.st_frame_info.nFrameNum))
+                print("get one frame: Width[%d], Height[%d], nFrameNum[%d]" % (
+                    self.st_frame_info.nWidth, self.st_frame_info.nHeight, self.st_frame_info.nFrameNum))
                 self.n_save_image_size = self.st_frame_info.nWidth * self.st_frame_info.nHeight * 3 + 2048
                 if img_buff is None:
                     img_buff = (c_ubyte * self.n_save_image_size)()
-                
+
+                # 保存原始图像（若需要）
                 if True == self.b_save_jpg:
-                    self.Save_jpg(buf_cache) #ch:保存Jpg图片 | en:Save Jpg
+                    self.Save_jpg(buf_cache)
                 if True == self.b_save_bmp:
-                    self.Save_Bmp(buf_cache) #ch:保存Bmp图片 | en:Save Bmp
+                    self.Save_Bmp(buf_cache)
             else:
-                print("no data, nret = "+self.To_hex_str(ret))
+                print("no data, nret = " + self.To_hex_str(ret))
                 continue
 
-            #转换像素结构体赋值
+            # ---------- 像素格式转换，得到 RGB 的 numArray ----------
             stConvertParam = MV_CC_PIXEL_CONVERT_PARAM()
             memset(byref(stConvertParam), 0, sizeof(stConvertParam))
             stConvertParam.nWidth = self.st_frame_info.nWidth
             stConvertParam.nHeight = self.st_frame_info.nHeight
             stConvertParam.pSrcData = cast(buf_cache, POINTER(c_ubyte))
             stConvertParam.nSrcDataLen = self.st_frame_info.nFrameLen
-            stConvertParam.enSrcPixelType = self.st_frame_info.enPixelType 
+            stConvertParam.enSrcPixelType = self.st_frame_info.enPixelType
 
-            # RGB直接显示
             if PixelType_Gvsp_RGB8_Packed == self.st_frame_info.enPixelType:
-                numArray = CameraOperation.Color_numpy(self,buf_cache,self.st_frame_info.nWidth,self.st_frame_info.nHeight)
-
-            #如果是彩色且非RGB则转为RGB后显示
+                numArray = CameraOperation.Color_numpy(self, buf_cache,
+                                                       self.st_frame_info.nWidth,
+                                                       self.st_frame_info.nHeight)
             else:
                 nConvertSize = self.st_frame_info.nWidth * self.st_frame_info.nHeight * 3
                 stConvertParam.enDstPixelType = PixelType_Gvsp_RGB8_Packed
                 stConvertParam.pDstBuffer = (c_ubyte * nConvertSize)()
                 stConvertParam.nDstBufferSize = nConvertSize
-                time_start=time.time()
                 ret = self.obj_cam.MV_CC_ConvertPixelType(stConvertParam)
-                time_end=time.time()
-                print('MV_CC_ConvertPixelType:',time_end - time_start) 
                 if ret != 0:
-                    tkinter.messagebox.showerror('show error','convert pixel fail! ret = '+self.To_hex_str(ret))
+                    tkinter.messagebox.showerror('show error', 'convert pixel fail! ret = ' + self.To_hex_str(ret))
                     continue
                 cdll.msvcrt.memcpy(byref(img_buff), stConvertParam.pDstBuffer, nConvertSize)
-                numArray = CameraOperation.Color_numpy(self,img_buff,self.st_frame_info.nWidth,self.st_frame_info.nHeight)
+                numArray = CameraOperation.Color_numpy(self, img_buff,
+                                                       self.st_frame_info.nWidth,
+                                                       self.st_frame_info.nHeight)
 
-            #合并OpenCV到Tkinter界面中
+            # ========== 实时零件检测（优化核心） ==========
+            # 1. RGB 大图 → BGR 大图 → 缩放到显示尺寸
+            bgr_big = cv.cvtColor(numArray, cv.COLOR_RGB2BGR)
+            bgr_small = cv.resize(bgr_big, (DISPLAY_W, DISPLAY_H))
+
+            # 2. 跳帧检测：每3帧检测一次，其余帧使用上次检测结果
+            self.frame_count += 1
+            if self.frame_count % 3 == 0 or self.last_detected is None:
+                # 在小图上检测（检测器内部已配置适应小图的面积阈值）
+                detected_small = self.detector.detect(bgr_small)
+                self.last_detected = detected_small.copy()
+            else:
+                detected_small = self.last_detected
+
+            # 3. 检测结果（BGR 小图）转 RGB 用于 Tkinter 显示
+            detected_rgb = cv.cvtColor(detected_small, cv.COLOR_BGR2RGB)
+            # ====================================================
+
+            # 显示到 Tkinter（图像已是 800x600，无需再次 resize）
             try:
-                # 新版本 Pillow (>=10.0.0)
                 resample = Image.Resampling.LANCZOS
             except AttributeError:
-                # 旧版本 Pillow
                 resample = Image.ANTIALIAS
-            current_image = Image.fromarray(numArray).resize((800, 600), resample)
+            current_image = Image.fromarray(detected_rgb)   # 已经是目标尺寸
             imgtk = ImageTk.PhotoImage(image=current_image, master=root)
-            panel.imgtk = imgtk       
-            panel.config(image=imgtk) 
+            panel.imgtk = imgtk
+            panel.config(image=imgtk)
             root.obr = imgtk
+
             nRet = self.obj_cam.MV_CC_FreeImageBuffer(stOutFrame)
-            if self.b_exit == True:
+            if self.b_exit:
                 if img_buff is not None:
                     del img_buff
                 if buf_cache is not None:
