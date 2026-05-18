@@ -16,7 +16,6 @@ camera_op = None          # CameraOperation 实例
 output_frame = None       # 当前检测结果图 (BGR numpy)
 lock = threading.Lock()   # 保护 output_frame 的线程锁
 
-
 # ---------- 视频流生成器 ----------
 def generate():
     """生成 MJPEG 视频流"""
@@ -198,6 +197,19 @@ def index():
     </body>
     </html>
     '''
+
+@app.route('/cmd/enum_devices', methods=['GET'])
+def enum_devices():
+    """枚举相机设备，返回设备列表"""
+    global camera_op
+    if camera_op is None:
+        return jsonify({"error": "camera_op not initialized"}), 500
+    # 调用 CameraOperation 中的 get_device_list 方法
+    try:
+        devices = camera_op.get_device_list()
+        return jsonify({"devices": devices})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # ---------- 启动函数 ----------

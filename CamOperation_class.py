@@ -432,6 +432,42 @@ class CameraOperation():
             self.gain = stFloatParam_gain.fCurValue
             tkinter.messagebox.showinfo('show info', 'get parameter success!')
 
+    def get_device_list(self):
+        """
+        返回所有枚举到的设备字符串列表，格式如:
+        ["[0]GigE: 相机名(192.168.1.100)", "[1]USB: 相机名(SN12345)"]
+        """
+        dev_list = []
+        for i in range(self.st_device_list.nDeviceNum):
+            mvcc_dev_info = cast(self.st_device_list.pDeviceInfo[i], POINTER(MV_CC_DEVICE_INFO)).contents
+            if mvcc_dev_info.nTLayerType == MV_GIGE_DEVICE:
+                # 解析 GigE 设备名称和 IP
+                chUserDefinedName = ""
+                for per in mvcc_dev_info.SpecialInfo.stGigEInfo.chUserDefinedName:
+                    if per == 0:
+                        break
+                    chUserDefinedName += chr(per)
+                ip = mvcc_dev_info.SpecialInfo.stGigEInfo.nCurrentIp
+                nip1 = (ip >> 24) & 0xFF
+                nip2 = (ip >> 16) & 0xFF
+                nip3 = (ip >> 8) & 0xFF
+                nip4 = ip & 0xFF
+                dev_list.append(f"[{i}]GigE: {chUserDefinedName}({nip1}.{nip2}.{nip3}.{nip4})")
+            elif mvcc_dev_info.nTLayerType == MV_USB_DEVICE:
+                # 解析 USB 设备名称和序列号
+                chUserDefinedName = ""
+                for per in mvcc_dev_info.SpecialInfo.stUsb3VInfo.chUserDefinedName:
+                    if per == 0:
+                        break
+                    chUserDefinedName += chr(per)
+                strSerialNumber = ""
+                for per in mvcc_dev_info.SpecialInfo.stUsb3VInfo.chSerialNumber:
+                    if per == 0:
+                        break
+                    strSerialNumber += chr(per)
+                dev_list.append(f"[{i}]USB: {chUserDefinedName}({strSerialNumber})")
+        return dev_list
+
     def Set_parameter(self, frameRate, exposureTime, gain):
         if '' == frameRate or '' == exposureTime or '' == gain:
             tkinter.messagebox.showinfo('show info', 'please type in the text box !')

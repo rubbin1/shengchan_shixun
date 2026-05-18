@@ -15,7 +15,6 @@ from PIL import Image,ImageTk
 import web_stream
 import threading
 
-
 #获取选取设备信息的索引，通过[]之间的字符去解析
 def TxtWrapBy(start_str, end, all):
     start = all.find(start_str)
