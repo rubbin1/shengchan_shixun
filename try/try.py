@@ -2,7 +2,7 @@ import cv2 as cv
 import numpy as np
 
 # ==================== 可调参数 ====================
-IMAGE_PATH = "../pictures/spare parts/1055.jpg"
+IMAGE_PATH = "../pictures/spare parts/485.jpg"
 MIN_AREA_ABS = 500          # 绝对最小面积（针对800x600图像）
 KERNEL_OPEN = (3, 3)
 KERNEL_CLOSE = (1, 1)       # 尽可能小，避免将零件焊死
@@ -244,7 +244,6 @@ def main():
     cv.imshow("Result", resize_to_display(result_img, MAX_DISPLAY_WIDTH))
     cv.waitKey(0)
     cv.destroyAllWindows()
-
 
 if __name__ == "__main__":
     main()
