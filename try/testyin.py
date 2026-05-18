@@ -1,42 +1,41 @@
-import socket
-import struct
-import time
+from flask import Flask, Response
 import cv2
 import numpy as np
+import time
 
-SERVER_IP = '0.0.0.0'
-SERVER_PORT = 12345
+app = Flask(__name__)
 
-# 生成基础测试图像
+# 生成基础测试图像（保留你们原有的逻辑）
 test_img = np.zeros((480, 640, 3), dtype=np.uint8)
 cv2.putText(test_img, "TEST IMAGE", (200, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
 
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-s.bind((SERVER_IP, SERVER_PORT))
-s.listen()
-print(f"服务端启动，等待连接 {SERVER_IP}:{SERVER_PORT} ...")
-conn, addr = s.accept()
-print(f"客户端已连接：{addr}")
+def generate_frames():
+    """生成视频帧（无限循环，每次 yield 一帧 JPEG）"""
+    while True:
+        # 复制图像并添加动态时间戳
+        img = test_img.copy()
+        cv2.putText(img, time.strftime("%H:%M:%S"), (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
 
-frame_count = 0
-last_time = time.time()
+        # 编码为 JPEG
+        ret, jpeg = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        if not ret:
+            continue
 
-while True:
-    # 复制图像并添加动态时间戳
-    img = test_img.copy()
-    cv2.putText(img, time.strftime("%H:%M:%S"), (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
-    ret, buf = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 85])
-    if not ret:
-        print("编码失败")
-        continue
-    data = buf.tobytes()
-    conn.sendall(struct.pack('>I', len(data)))
-    conn.sendall(data)
-    frame_count += 1
-    now = time.time()
-    if now - last_time >= 1.0:
-        print(f"发送帧率：{frame_count} fps")
-        frame_count = 0
-        last_time = now
-    time.sleep(0.05)   # 约 20 fps
+        # 拼接成 MJPEG 流的一帧（格式：--boundary\r\nContent-Type...\r\n\r\n图像数据）
+        frame = b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n'
+        yield frame
+
+        # 控制帧率（约 20 fps）
+        time.sleep(0.05)
+
+@app.route('/camera')
+def camera():
+    """MJPEG 视频流地址"""
+    return Response(generate_frames(),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
+
+if __name__ == '__main__':
+    print("MJPEG 流服务启动，访问 http://<本机IP>:8888/camera")
+    # 监听所有网卡，端口 8080，允许局域网内其他设备访问
+    app.run(host='0.0.0.0', port=8888, debug=False, threaded=True)

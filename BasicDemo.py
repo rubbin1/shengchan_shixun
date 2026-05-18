@@ -12,6 +12,9 @@ from MvCameraControl_class import *
 from CamOperation_class import *
 from PIL import Image,ImageTk
 
+import web_stream
+import threading
+
 
 #获取选取设备信息的索引，通过[]之间的字符去解析
 def TxtWrapBy(start_str, end, all):
@@ -133,6 +136,12 @@ if __name__ == "__main__":
         else:
             model_val.set('continuous')
             b_is_run = True
+            # 启动Web流线程（只启动一次）
+            if not hasattr(web_stream, 'thread_started'):
+                web_thread = threading.Thread(target=web_stream.start_stream, daemon=True)
+                web_thread.start()
+                web_stream.thread_started = True
+                print("Web 视频流已启动，浏览器访问 http://<本机IP>:8888/camera")
             obj_cam_operation.save_path = save_folder  # *** 新增：同步保存路径 ***
 
     # ch:开始取流 | en:Start grab image
