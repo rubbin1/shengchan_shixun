@@ -8,7 +8,6 @@ from flask import Flask, Response, request, jsonify
 import cv2
 import numpy as np
 import threading
-
 app = Flask(__name__)
 
 # ---------- 全局变量，由外部 camera_service.py 设置 ----------

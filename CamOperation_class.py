@@ -23,7 +23,6 @@ from MvCameraControl_class import *
 
 from part_detector import PartDetector
 
-
 def Async_raise(tid, exctype):
     tid = ctypes.c_long(tid)
     if not inspect.isclass(exctype):
