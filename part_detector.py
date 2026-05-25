@@ -44,20 +44,29 @@ class PartDetector:
         self.sep_strength = 0.03       # 凸缺陷深度系数（越小越敏感）
         self.min_marker_area = 20      # 分水岭标记最小面积
 
+        # 新增：存储最近一次检测的所有零件信息
+        self.last_parts = []           # 每个元素为 dict
+
     # ==================== 主检测接口 ====================
     def detect(self, bgr_image):
-        """输入 BGR 图像，返回标注了颜色+形状标签的 BGR 图像"""
+        """
+        输入 BGR 图像（通常已是 800x600 的小图），
+        返回标注了颜色+形状标签的 BGR 图像。
+        同时 self.last_parts 被更新为当前帧的零件列表。
+        """
         img = bgr_image.copy()
         hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
         img_h, img_w = img.shape[:2]
 
-        # 面积阈值：优先使用 ratio，否则用绝对值按图像尺寸缩放
+        # 面积阈值
         if self.min_area_ratio is not None:
             min_area = self.min_area_ratio * img_w * img_h
         else:
             min_area = self.min_area_abs * (img_w * img_h) / (800 * 600)
 
         result_img = img.copy()
+        self.last_parts = []   # 清空上一帧的数据
+        global_part_id = 0     # 全局零件编号，从1开始
 
         for name, (lower, upper) in self.color_types.items():
             # 1. 颜色掩膜 + 形态学清理
@@ -65,37 +74,54 @@ class PartDetector:
             mask = cv.morphologyEx(mask, cv.MORPH_CLOSE, self.kernel_close)
             mask = cv.morphologyEx(mask, cv.MORPH_OPEN, self.kernel_open)
 
-            # 2. 两级分离：腐蚀分水岭（主） + 凸缺陷切割（回退）
+            # 2. 分离粘连零件
             contours = self._separate_touching_parts(mask, min_area)
 
-            # 3. 标签信息
+            # 3. 颜色/形状英文名
             en_color = self.color_name_en.get(name, name)
             target_vert = self.target_vertices.get(name, 4)
             en_shape = self.shape_names_en.get(target_vert, f"{target_vert}gon")
 
-            # 4. 遍历每个零件画质心和标签
+            # 4. 遍历每个零件，收集信息并绘图
             for cnt in contours:
-                x, y, w, h = cv.boundingRect(cnt)
+                # 中心点
                 M = cv.moments(cnt)
                 if M["m00"] != 0:
                     cx = int(M["m10"] / M["m00"])
                     cy = int(M["m01"] / M["m00"])
                 else:
+                    x, y, w, h = cv.boundingRect(cnt)
                     cx, cy = x + w // 2, y + h // 2
 
+                area = cv.contourArea(cnt)
+
+                # --- 保存零件信息到 last_parts ---
+                global_part_id += 1
+                # 轮廓点转为 Python list 用于 JSON 序列化
+                contour_list = cnt.reshape(-1, 2).tolist()
+                self.last_parts.append({
+                    "id": global_part_id,
+                    "center": [cx, cy],
+                    "area": area,
+                    "contour": contour_list,
+                    "color": en_color,
+                    "shape": en_shape
+                })
+
+                # 绘制全局编号和标签
                 cv.circle(result_img, (cx, cy), 3, (0, 0, 0), -1)
-                text = f"{en_color} {en_shape}"
+                text = f"{global_part_id} {en_color} {en_shape}"
                 cv.putText(result_img, text, (cx + 6, cy - 6),
                            cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
 
         return result_img
 
-    # ==================== 两级分离策略 ====================
+    # ==================== 两级分离策略（保持不变） ====================
     def _separate_touching_parts(self, mask, min_area):
         """
         两级分离：
-        1. 腐蚀+分水岭：断开薄连接（处理边-边贴合）
-        2. 凸缺陷切割：仅对明确凹形(solidity<0.88)或2~4个深凹点的大轮廓
+        1. 腐蚀+分水岭：断开薄连接
+        2. 凸缺陷切割：对凹形大轮廓
         """
         # --- 第一级：腐蚀+分水岭 ---
         ws_contours = self._erosion_watershed_separation(mask)
@@ -128,6 +154,8 @@ class PartDetector:
             min_side = min(w, h)
             smoothed_chk = self._smooth_contour(cnt)
             hull_idx_chk = cv.convexHull(smoothed_chk, returnPoints=False)
+            if len(hull_idx_chk) > 0:
+                hull_idx_chk = np.sort(hull_idx_chk, axis=0)
             n_deep = 0
             if len(hull_idx_chk) >= 3:
                 defects_chk = cv.convexityDefects(smoothed_chk, hull_idx_chk)
@@ -166,12 +194,8 @@ class PartDetector:
 
         return all_contours
 
-    # ==================== 腐蚀+分水岭分离 ====================
+    # ==================== 腐蚀+分水岭分离（保持不变） ====================
     def _erosion_watershed_separation(self, mask):
-        """
-        自适应腐蚀+分水岭：逐步加深腐蚀断开薄连接，
-        找到分离效果最好的级别。返回轮廓列表或 None。
-        """
         kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (5, 5))
         best_contours = None
         best_count = 1
@@ -190,18 +214,15 @@ class PartDetector:
             if min(areas) < max(areas) * 0.15:
                 break
 
-            # 构建标记（不膨胀，避免标记重新融合）
             sure_fg = np.zeros_like(mask, dtype=np.int32)
             for idx, (comp_id, _) in enumerate(valid):
                 sure_fg[labels == comp_id] = idx + 1
 
             unknown = cv.subtract(mask, np.uint8(sure_fg > 0) * 255)
-
             markers = sure_fg + 1
             markers[unknown == 255] = 0
             cv.watershed(cv.cvtColor(mask, cv.COLOR_GRAY2BGR), markers)
 
-            # 逐标签提取轮廓（避免分水岭边界断裂导致融合）
             contours = []
             for label in range(2, markers.max() + 1):
                 region = np.uint8(markers == label) * 255
@@ -216,19 +237,17 @@ class PartDetector:
 
         return best_contours
 
-    # ==================== 凸缺陷切割 ====================
+    # ==================== 凸缺陷切割工具（保持不变） ====================
     def _smooth_contour(self, cnt, epsilon_factor=0.006):
         peri = cv.arcLength(cnt, True)
         return cv.approxPolyDP(cnt, epsilon_factor * peri, True)
 
     def _split_contour_by_convexity_multi(self, cnt):
-        """用凸缺陷检测凹点，沿凹点切割粘连轮廓"""
         smoothed = self._smooth_contour(cnt)
-
         hull = cv.convexHull(smoothed, returnPoints=False)
         if len(hull) < 3:
             return [cnt]
-
+        hull = np.sort(hull, axis=0)
         defects = cv.convexityDefects(smoothed, hull)
         if defects is None:
             return [cnt]
@@ -252,7 +271,6 @@ class PartDetector:
         pts = np.array([smoothed[p[0]][0] for p in deep_points])
         indices = [p[0] for p in deep_points]
 
-        # 聚类
         cluster_dist = min_side * 0.3
         clusters = []
         used = set()
@@ -272,9 +290,7 @@ class PartDetector:
         if len(clusters) < 2:
             return [cnt]
 
-        # 每个聚类取最深凹点索引
         cut_indices = sorted(indices[cl[0]] for cl in clusters)
-        # 去重
         n_pts = len(smoothed)
         unique_cuts = [cut_indices[0]]
         for ci in cut_indices[1:]:
@@ -284,7 +300,6 @@ class PartDetector:
                 unique_cuts.append(ci)
         cut_indices = unique_cuts
 
-        # 分割轮廓
         cnt_pts = smoothed.reshape(-1, 2)
         sub_contours = []
         for i in range(len(cut_indices)):
@@ -298,7 +313,6 @@ class PartDetector:
                 segment = np.vstack([segment, segment[0]])
             sub_contours.append(segment.reshape(-1, 1, 2).astype(np.int32))
 
-        # 过滤无效切割
         total_peri = cv.arcLength(smoothed, True)
         valid_subs = []
         for sub in sub_contours:

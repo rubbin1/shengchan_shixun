@@ -2,7 +2,7 @@ import cv2 as cv
 import numpy as np
 
 # ==================== 可调参数 ====================
-IMAGE_PATH = "../pictures/spare parts/1055.jpg"
+IMAGE_PATH = "../pictures/spare parts/877.jpg"
 MIN_AREA_ABS = 500
 KERNEL_OPEN = (3, 3)
 KERNEL_CLOSE = (1, 1)
@@ -84,6 +84,7 @@ def split_contour_by_convexity_multi(cnt, strength=0.03):
     hull = cv.convexHull(smoothed, returnPoints=False)
     if len(hull) < 3:
         return [cnt]
+    hull = np.sort(hull, axis=0)
 
     defects = cv.convexityDefects(smoothed, hull)
     if defects is None:
@@ -304,6 +305,8 @@ def separate_touching_parts(mask, min_area, separation_strength=0.03):
         min_side = min(w, h)
         smoothed_chk = smooth_contour(cnt)
         hull_idx_chk = cv.convexHull(smoothed_chk, returnPoints=False)
+        if len(hull_idx_chk) > 0:
+            hull_idx_chk = np.sort(hull_idx_chk, axis=0)
         n_deep = 0
         if len(hull_idx_chk) >= 3:
             defects_chk = cv.convexityDefects(smoothed_chk, hull_idx_chk)
