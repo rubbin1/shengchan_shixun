@@ -1,8 +1,6 @@
 import cv2 as cv
 import numpy as np
 
-#599,766,877,927,
-
 # ==================== 可调参数 ====================
 IMAGE_PATH = "../pictures/spare parts/1055.jpg"
 MIN_AREA_ABS = 500

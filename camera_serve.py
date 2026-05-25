@@ -40,7 +40,7 @@ def main():
     # 5. 将 camera_op 传给 web_stream 模块
     web_stream.camera_op = cam_op
 
-    # 6. 启动取流和检测线程（无 GUI 版本）
+    # 6. 启动取流和检测线程
     ret = cam_op.Start_grabbing_no_gui()
     if ret != 0:
         print("start grabbing failed")
